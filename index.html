@@ -306,6 +306,27 @@
             margin-bottom: 10px;
         }
 
+        .file-input {
+            display: none;
+        }
+
+        .drop-zone {
+            border: 1px dashed #555;
+            border-radius: 4px;
+            padding: 10px 12px;
+            color: #888;
+            font-size: 12px;
+            text-align: center;
+            margin-top: 10px;
+            transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+        }
+
+        .drop-zone.dragover {
+            border-color: #0e639c;
+            color: #bcdcff;
+            background: #1f2b36;
+        }
+
         @media (max-width: 900px) {
             .content {
                 grid-template-columns: 1fr;
@@ -342,8 +363,11 @@
 ]'></textarea>
                 <div class="button-group">
                     <button class="btn-primary" onclick="parseJson()">Parse JSON</button>
+                    <button class="btn-secondary" onclick="triggerFileImport()">Import File</button>
                     <button class="btn-secondary" onclick="clearInput()">Clear</button>
                 </div>
+                <input class="file-input" id="fileInput" type="file" accept=".json,.log,application/json,text/plain" />
+                <div id="dropZone" class="drop-zone">Drag and drop a .json or .log file here to import</div>
                 <div id="inputMessage"></div>
             </div>
 
@@ -366,6 +390,7 @@
                 <div id="outputJson" class="output-json empty" role="region" aria-label="Filtered JSON output"></div>
                 <div class="button-group">
                     <button class="btn-secondary" onclick="copyOutput()">Copy to Clipboard</button>
+                    <button class="btn-secondary" onclick="downloadOutput()">Download JSON</button>
                 </div>
                 <div id="outputMessage"></div>
             </div>
@@ -796,6 +821,48 @@ ${indent}}`;
             }
         }
 
+        function triggerFileImport() {
+            const fileInput = document.getElementById('fileInput');
+            fileInput.value = '';
+            fileInput.click();
+        }
+
+        function handleFileImport(file) {
+            const messageDiv = document.getElementById('inputMessage');
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = () => {
+                document.getElementById('inputJson').value = String(reader.result || '');
+                messageDiv.innerHTML = `<div class="success-message">✓ Loaded ${escapeHtml(file.name)}</div>`;
+                parseJson();
+            };
+            reader.onerror = () => {
+                messageDiv.innerHTML = '<div class="error-message">Failed to read file</div>';
+            };
+            reader.readAsText(file);
+        }
+
+        function downloadOutput() {
+            const messageDiv = document.getElementById('outputMessage');
+            if (!lastOutputText) {
+                messageDiv.innerHTML = '<div class="error-message">Nothing to download. Apply filter first.</div>';
+                return;
+            }
+
+            const blob = new Blob([lastOutputText], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            link.href = url;
+            link.download = `filtered-json-${timestamp}.json`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+            messageDiv.innerHTML = '<div class="success-message">✓ Download started</div>';
+        }
+
         function clearInput() {
             document.getElementById('inputJson').value = '';
             document.getElementById('inputMessage').innerHTML = '';
@@ -818,6 +885,26 @@ ${indent}}`;
             if (!checkbox) return;
             checkbox.checked = !checkbox.checked;
             handleFieldChange(checkbox);
+        });
+
+        document.getElementById('fileInput').addEventListener('change', (event) => {
+            const file = event.target.files && event.target.files[0];
+            handleFileImport(file);
+        });
+
+        const dropZone = document.getElementById('dropZone');
+        dropZone.addEventListener('dragover', (event) => {
+            event.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+        dropZone.addEventListener('drop', (event) => {
+            event.preventDefault();
+            dropZone.classList.remove('dragover');
+            const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
+            handleFileImport(file);
         });
     </script>
 </body>
