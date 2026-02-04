@@ -15,7 +15,10 @@
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
             background: #f5f5f5;
             min-height: 100vh;
+            height: 100vh;
             padding: 20px;
+            display: flex;
+            flex-direction: column;
         }
 
         .container {
@@ -24,6 +27,10 @@
             background: white;
             border: 1px solid #ddd;
             overflow: hidden;
+            flex: 1;
+            display: grid;
+            grid-template-rows: auto 1fr;
+            width: 100%;
         }
 
         .header {
@@ -45,15 +52,19 @@
 
         .content {
             display: grid;
-            grid-template-columns: 1fr 350px 1fr;
+            grid-template-columns: minmax(200px, 1fr) 350px minmax(200px, 1fr);
             gap: 0;
-            min-height: 600px;
+            min-height: 0;
+            width: 100%;
+            overflow: hidden;
         }
 
         .input-section, .output-section {
             padding: 20px;
             display: flex;
             flex-direction: column;
+            min-height: 0;
+            overflow: hidden;
         }
 
         .input-section {
@@ -71,7 +82,7 @@
             border-left: 1px solid #ddd;
             border-right: 1px solid #ddd;
             overflow-y: auto;
-            max-height: 600px;
+            min-height: 0;
         }
 
         .section-title {
@@ -84,6 +95,7 @@
         textarea {
             width: 100%;
             flex: 1;
+            min-height: 0;
             padding: 12px;
             border: 1px solid #ddd;
             border-radius: 4px;
@@ -178,6 +190,39 @@
         .nested-level-1 { margin-left: 20px; }
         .nested-level-2 { margin-left: 40px; }
         .nested-level-3 { margin-left: 60px; }
+        .nested-level-4 { margin-left: 80px; }
+        .nested-level-5 { margin-left: 100px; }
+
+        .field-item.collapsed-children {
+            display: none;
+        }
+
+        .collapse-btn {
+            background: none;
+            border: none;
+            padding: 0;
+            margin-right: 6px;
+            margin-top: 2px;
+            cursor: pointer;
+            font-size: 10px;
+            color: #666;
+            width: 14px;
+            height: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .collapse-btn:hover {
+            color: #333;
+        }
+
+        .field-header {
+            display: flex;
+            align-items: flex-start;
+            flex: 1;
+        }
 
         .controls {
             display: flex;
@@ -222,6 +267,7 @@
         @media (max-width: 900px) {
             .content {
                 grid-template-columns: 1fr;
+                grid-template-rows: auto auto auto;
             }
 
             .input-section, .output-section, .field-selector {
@@ -265,6 +311,10 @@
                     <button class="btn-secondary" onclick="selectAll()">Select All</button>
                     <button class="btn-secondary" onclick="deselectAll()">Deselect All</button>
                 </div>
+                <div class="controls">
+                    <button class="btn-secondary" onclick="expandAll()">Expand All</button>
+                    <button class="btn-secondary" onclick="collapseAll()">Collapse All</button>
+                </div>
                 <div class="stats" id="fieldStats"></div>
                 <div id="fieldList"></div>
             </div>
@@ -283,6 +333,9 @@
     <script>
         let parsedData = null;
         let fieldPaths = new Set();
+        let collapsedParents = new Set();
+        let checkedPaths = new Set(); // Track checked state separately
+        let excludedPaths = new Set();
 
         function getAllFieldPaths(obj, prefix = '') {
             const paths = [];
@@ -340,8 +393,18 @@
             }
             
             try {
-                parsedData = JSON.parse(input);
+                // Remove dangling commas before parsing
+                const cleanedInput = input
+                    .replace(/,(\s*[}\]])/g, '$1'); // Remove commas before } or ]
+                
+                parsedData = JSON.parse(cleanedInput);
+                
+                // Format the input JSON like Prettier
+                const formattedJson = JSON.stringify(parsedData, null, 2);
+                document.getElementById('inputJson').value = formattedJson;
+                
                 fieldPaths = new Set(getAllFieldPaths(parsedData));
+                checkedPaths = new Set(fieldPaths);
                 
                 messageDiv.innerHTML = '<div class="success-message">✓ JSON parsed successfully!</div>';
                 renderFieldList();
@@ -354,20 +417,57 @@
             }
         }
 
+        function buildParentChildMap(paths) {
+            const parentChildren = new Map();
+            
+            for (const path of paths) {
+                const parts = path.split('.');
+                for (let i = 1; i < parts.length; i++) {
+                    const parent = parts.slice(0, i).join('.');
+                    if (!parentChildren.has(parent)) {
+                        parentChildren.set(parent, new Set());
+                    }
+                    parentChildren.get(parent).add(path);
+                }
+            }
+            
+            return parentChildren;
+        }
+
+        function isChildOfCollapsedParent(path) {
+            for (const collapsedParent of collapsedParents) {
+                if (path.startsWith(collapsedParent + '.')) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         function renderFieldList() {
             const fieldList = document.getElementById('fieldList');
             const sortedPaths = Array.from(fieldPaths).sort();
+            const parentChildren = buildParentChildMap(sortedPaths);
             
             let html = '';
             for (const path of sortedPaths) {
+                // Skip if this field is a child of a collapsed parent
+                if (isChildOfCollapsedParent(path)) {
+                    continue;
+                }
+                
                 const type = getFieldType(parsedData, path);
                 const level = getNestingLevel(path);
-                const nestClass = level > 0 ? `nested-level-${Math.min(level, 3)}` : '';
-                const displayName = path.split('.').pop(); // Get only the leaf name
+                const nestClass = level > 0 ? `nested-level-${Math.min(level, 5)}` : '';
+                const displayName = path.split('.').pop();
+                const hasChildren = parentChildren.has(path);
+                const isCollapsed = collapsedParents.has(path);
+                const collapseIcon = isCollapsed ? '▶' : '▼';
+                const isChecked = checkedPaths.has(path);
                 
                 html += `
-                    <div class="field-item ${nestClass}">
-                        <input type="checkbox" id="field-${path.replace(/\./g, '-')}" data-path="${path}" checked onchange="handleFieldChange(this)">
+                    <div class="field-item ${nestClass}" data-path="${path}">
+                        ${hasChildren ? `<button class="collapse-btn" onclick="toggleCollapse('${path}')" title="${isCollapsed ? 'Expand' : 'Collapse'}">${collapseIcon}</button>` : '<span style="width: 14px; margin-right: 6px; flex-shrink: 0;"></span>'}
+                        <input type="checkbox" id="field-${path.replace(/\./g, '-')}" data-path="${path}" ${isChecked ? 'checked' : ''} onchange="handleFieldChange(this)">
                         <label class="field-label" for="field-${path.replace(/\./g, '-')}">
                             <div class="field-path">${displayName}</div>
                             <div class="field-type">Type: ${type}</div>
@@ -377,24 +477,97 @@
             }
             
             fieldList.innerHTML = html || '<p style="color: #999;">No fields to display. Parse JSON first.</p>';
+            updateParentStates();
+            syncCheckedPathsFromDom();
+        }
+
+        function toggleCollapse(path) {
+            if (collapsedParents.has(path)) {
+                collapsedParents.delete(path);
+            } else {
+                collapsedParents.add(path);
+            }
+            renderFieldList();
+        }
+
+        function expandAll() {
+            collapsedParents.clear();
+            renderFieldList();
+        }
+
+        function collapseAll() {
+            const sortedPaths = Array.from(fieldPaths).sort();
+            const parentChildren = buildParentChildMap(sortedPaths);
+            
+            // Find all parent fields and collapse them
+            for (const path of sortedPaths) {
+                if (parentChildren.has(path)) {
+                    collapsedParents.add(path);
+                }
+            }
+            renderFieldList();
         }
 
         function handleFieldChange(checkbox) {
             const path = checkbox.dataset.path;
             const isChecked = checkbox.checked;
             
-            // If unchecking a field, uncheck all its children
             if (!isChecked) {
+                // If unchecking a field, uncheck all its children
                 document.querySelectorAll('#fieldList input[type="checkbox"]').forEach(cb => {
                     const cbPath = cb.dataset.path;
-                    // Check if this checkbox is a child of the unchecked field
                     if (cbPath.startsWith(path + '.')) {
                         cb.checked = false;
                     }
                 });
+            } else {
+                // If checking a field, check all its children
+                document.querySelectorAll('#fieldList input[type="checkbox"]').forEach(cb => {
+                    const cbPath = cb.dataset.path;
+                    if (cbPath.startsWith(path + '.')) {
+                        cb.checked = true;
+                    }
+                });
             }
-            
+            syncCheckedPathsFromDom();
+            updateParentStates();
+            syncCheckedPathsFromDom();
             updateStats();
+        }
+
+        function syncCheckedPathsFromDom() {
+            checkedPaths = new Set();
+            document.querySelectorAll('#fieldList input[type="checkbox"]:checked').forEach(cb => {
+                checkedPaths.add(cb.dataset.path);
+            });
+        }
+
+        function updateParentStates() {
+            const sortedPaths = Array.from(fieldPaths).sort();
+            const parentChildren = buildParentChildMap(sortedPaths);
+            
+            for (const [parent, children] of parentChildren.entries()) {
+                const parentCheckbox = document.querySelector(`#fieldList input[type="checkbox"][data-path="${parent}"]`);
+                if (!parentCheckbox) continue;
+
+                let checkedCount = 0;
+                for (const child of children) {
+                    if (checkedPaths.has(child)) {
+                        checkedCount += 1;
+                    }
+                }
+
+                if (checkedCount === 0) {
+                    parentCheckbox.checked = false;
+                    parentCheckbox.indeterminate = false;
+                } else if (checkedCount === children.size) {
+                    parentCheckbox.checked = true;
+                    parentCheckbox.indeterminate = false;
+                } else {
+                    parentCheckbox.checked = false;
+                    parentCheckbox.indeterminate = true;
+                }
+            }
         }
 
         function updateStats() {
@@ -408,50 +581,58 @@
 
         function selectAll() {
             document.querySelectorAll('#fieldList input[type="checkbox"]').forEach(cb => cb.checked = true);
+            syncCheckedPathsFromDom();
+            updateParentStates();
+            syncCheckedPathsFromDom();
             updateStats();
         }
 
         function deselectAll() {
             document.querySelectorAll('#fieldList input[type="checkbox"]').forEach(cb => cb.checked = false);
+            syncCheckedPathsFromDom();
+            updateParentStates();
+            syncCheckedPathsFromDom();
             updateStats();
         }
 
-        function filterObject(obj, selectedPaths) {
-            if (Array.isArray(obj)) {
-                return obj.map(item => filterObject(item, selectedPaths));
-            }
-            
-            if (obj === null || typeof obj !== 'object') {
-                return obj;
-            }
-            
-            const filtered = {};
-            
-            for (const key in obj) {
-                // Check if this exact key path is selected or if any child path is selected
-                const keyIsSelected = Array.from(selectedPaths).some(path => path === key);
-                const hasSelectedChildren = Array.from(selectedPaths).some(path => path.startsWith(key + '.'));
-                
-                if (keyIsSelected) {
-                    // Include the entire value for this key
-                    filtered[key] = obj[key];
-                } else if (hasSelectedChildren) {
-                    // Recursively filter children
-                    const childPaths = new Set();
-                    selectedPaths.forEach(path => {
-                        if (path.startsWith(key + '.')) {
-                            childPaths.add(path.substring(key.length + 1));
-                        }
-                    });
-                    
-                    if (typeof obj[key] === 'object' && obj[key] !== null) {
-                        filtered[key] = filterObject(obj[key], childPaths);
-                    }
-                }
-            }
-            
-            return filtered;
-        }
+         function filterObject(obj, selectedPaths, prefix = '') {
+             if (Array.isArray(obj)) {
+                 return obj.map(item => filterObject(item, selectedPaths, prefix));
+             }
+             
+             if (obj === null || typeof obj !== 'object') {
+                 return obj;
+             }
+             
+             const filtered = {};
+              const selectedArray = Array.from(selectedPaths);
+             
+              for (const key in obj) {
+                  const fullPath = prefix ? `${prefix}.${key}` : key;
+                  const keyIsSelected = selectedArray.includes(fullPath);
+                  // Check if this key is a parent of any selected path
+                  const hasSelectedChildren = selectedArray.some(path => path.startsWith(fullPath + '.'));
+
+                  if (keyIsSelected && !hasSelectedChildren) {
+                      // Include the entire value for this key
+                      filtered[key] = obj[key];
+                  } else if (keyIsSelected || hasSelectedChildren) {
+                      // Recursively filter children (allows excluding a single child when parent is selected)
+                      const childPaths = new Set();
+                      selectedPaths.forEach(path => {
+                          if (path.startsWith(fullPath + '.')) {
+                              childPaths.add(path.substring(fullPath.length + 1));
+                          }
+                      });
+
+                      if (typeof obj[key] === 'object' && obj[key] !== null) {
+                          filtered[key] = filterObject(obj[key], childPaths, '');
+                      }
+                  }
+              }
+             
+             return filtered;
+         }
 
         function applyFilter(silent = false) {
             const outputDiv = document.getElementById('outputMessage');
@@ -515,6 +696,8 @@
             document.getElementById('fieldStats').textContent = '';
             parsedData = null;
             fieldPaths = new Set();
+            checkedPaths = new Set();
+            collapsedParents.clear();
         }
     </script>
 </body>
