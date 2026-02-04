@@ -977,10 +977,17 @@ ${indent}}`;
             const keyEl = event.target.closest('.json-key');
             if (!keyEl) return;
             const path = keyEl.dataset.path;
+            if (!fieldPaths.has(path)) return;
             const checkbox = document.querySelector(`#fieldList input[type="checkbox"][data-path="${path}"]`);
-            if (!checkbox) return;
-            checkbox.checked = !checkbox.checked;
-            handleFieldChange(checkbox);
+            if (checkbox) {
+                checkbox.checked = !checkbox.checked;
+                handleFieldChange(checkbox);
+                return;
+            }
+            const isChecked = checkedPaths.has(path);
+            setCheckedForPathAndChildren(path, !isChecked);
+            renderFieldList();
+            updateStats();
         });
 
         document.getElementById('fileInput').addEventListener('change', (event) => {
