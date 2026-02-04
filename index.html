@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JSON Log Field Selector</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f5f5f5;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            background: white;
+            border: 1px solid #ddd;
+            overflow: hidden;
+        }
+
+        .header {
+            background: #fff;
+            border-bottom: 1px solid #ddd;
+            padding: 20px 30px;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            margin-bottom: 5px;
+            color: #333;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .content {
+            display: grid;
+            grid-template-columns: 1fr 350px 1fr;
+            gap: 0;
+            min-height: 600px;
+        }
+
+        .input-section, .output-section {
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .input-section {
+            border-right: 1px solid #ddd;
+        }
+
+        .output-section {
+            border-left: 1px solid #ddd;
+            background: #fafafa;
+        }
+
+        .field-selector {
+            padding: 20px;
+            background: #fff;
+            border-left: 1px solid #ddd;
+            border-right: 1px solid #ddd;
+            overflow-y: auto;
+            max-height: 600px;
+        }
+
+        .section-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: #333;
+        }
+
+        textarea {
+            width: 100%;
+            flex: 1;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 13px;
+            resize: none;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: #999;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        button {
+            padding: 10px 20px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            background: #fff;
+            color: #333;
+        }
+
+        .btn-primary {
+            background: #333;
+            color: white;
+            border-color: #333;
+            flex: 1;
+        }
+
+        .btn-primary:hover {
+            background: #555;
+            border-color: #555;
+        }
+
+        .btn-secondary {
+            background: white;
+            color: #333;
+            border: 1px solid #ddd;
+        }
+
+        .btn-secondary:hover {
+            background: #f5f5f5;
+        }
+
+        .field-item {
+            display: flex;
+            align-items: flex-start;
+            padding: 8px;
+            margin-bottom: 4px;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+        }
+
+        .field-item:hover {
+            background: #f9f9f9;
+        }
+
+        .field-item input[type="checkbox"] {
+            margin-right: 10px;
+            margin-top: 3px;
+            cursor: pointer;
+            width: 16px;
+            height: 16px;
+        }
+
+        .field-label {
+            flex: 1;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .field-path {
+            font-weight: 500;
+            color: #333;
+            margin-bottom: 2px;
+        }
+
+        .field-type {
+            font-size: 12px;
+            color: #999;
+        }
+
+        .nested-level-1 { margin-left: 20px; }
+        .nested-level-2 { margin-left: 40px; }
+        .nested-level-3 { margin-left: 60px; }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .controls button {
+            flex: 1;
+            padding: 8px 12px;
+            font-size: 13px;
+        }
+
+        .error-message {
+            background: #ffebee;
+            color: #c62828;
+            padding: 10px;
+            border-radius: 3px;
+            margin-top: 15px;
+            font-size: 14px;
+            border: 1px solid #ef9a9a;
+        }
+
+        .success-message {
+            background: #e8f5e9;
+            color: #2e7d32;
+            padding: 10px;
+            border-radius: 3px;
+            margin-top: 15px;
+            font-size: 14px;
+            border: 1px solid #a5d6a7;
+        }
+
+        .stats {
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 10px;
+        }
+
+        @media (max-width: 900px) {
+            .content {
+                grid-template-columns: 1fr;
+            }
+
+            .input-section, .output-section, .field-selector {
+                border: none;
+                border-bottom: 1px solid #ddd;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>JSON Log Field Selector</h1>
+            <p>Paste your JSON logs, select the fields you want to keep, and export the filtered result</p>
+        </div>
+
+        <div class="content">
+            <div class="input-section">
+                <div class="section-title">Input JSON</div>
+                <textarea id="inputJson" placeholder='Paste your JSON log here, e.g.:
+[
+  {
+    "insertId": "abc123",
+    "timestamp": "2026-01-13T09:09:28.652Z",
+    "jsonPayload": {
+      "message": "request completed",
+      "level": 30
+    }
+  }
+]'></textarea>
+                <div class="button-group">
+                    <button class="btn-primary" onclick="parseJson()">Parse JSON</button>
+                    <button class="btn-secondary" onclick="clearInput()">Clear</button>
+                </div>
+                <div id="inputMessage"></div>
+            </div>
+
+            <div class="field-selector">
+                <div class="section-title">Select Fields</div>
+                <div class="controls">
+                    <button class="btn-secondary" onclick="selectAll()">Select All</button>
+                    <button class="btn-secondary" onclick="deselectAll()">Deselect All</button>
+                </div>
+                <div class="stats" id="fieldStats"></div>
+                <div id="fieldList"></div>
+            </div>
+
+            <div class="output-section">
+                <div class="section-title">Live Preview</div>
+                <textarea id="outputJson" placeholder="Filtered JSON will appear here..." readonly></textarea>
+                <div class="button-group">
+                    <button class="btn-secondary" onclick="copyOutput()">Copy to Clipboard</button>
+                </div>
+                <div id="outputMessage"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let parsedData = null;
+        let fieldPaths = new Set();
+
+        function getAllFieldPaths(obj, prefix = '') {
+            const paths = [];
+            
+            if (Array.isArray(obj)) {
+                if (obj.length > 0) {
+                    getAllFieldPaths(obj[0], prefix).forEach(path => paths.push(path));
+                }
+            } else if (obj !== null && typeof obj === 'object') {
+                for (const key in obj) {
+                    const path = prefix ? `${prefix}.${key}` : key;
+                    paths.push(path);
+                    
+                    if (typeof obj[key] === 'object' && obj[key] !== null) {
+                        getAllFieldPaths(obj[key], path).forEach(subPath => paths.push(subPath));
+                    }
+                }
+            }
+            
+            return paths;
+        }
+
+        function getFieldType(obj, path) {
+            const parts = path.split('.');
+            let current = obj;
+            
+            if (Array.isArray(current) && current.length > 0) {
+                current = current[0];
+            }
+            
+            for (const part of parts) {
+                if (current === null || current === undefined) return 'null';
+                current = current[part];
+                if (Array.isArray(current) && current.length > 0) {
+                    current = current[0];
+                }
+            }
+            
+            if (current === null) return 'null';
+            if (Array.isArray(current)) return 'array';
+            return typeof current;
+        }
+
+        function getNestingLevel(path) {
+            return path.split('.').length - 1;
+        }
+
+        function parseJson() {
+            const input = document.getElementById('inputJson').value.trim();
+            const messageDiv = document.getElementById('inputMessage');
+            
+            if (!input) {
+                messageDiv.innerHTML = '<div class="error-message">Please paste some JSON data</div>';
+                return;
+            }
+            
+            try {
+                parsedData = JSON.parse(input);
+                fieldPaths = new Set(getAllFieldPaths(parsedData));
+                
+                messageDiv.innerHTML = '<div class="success-message">✓ JSON parsed successfully!</div>';
+                renderFieldList();
+                updateStats();
+            } catch (error) {
+                messageDiv.innerHTML = `<div class="error-message">Invalid JSON: ${error.message}</div>`;
+                parsedData = null;
+                document.getElementById('fieldList').innerHTML = '';
+                document.getElementById('outputJson').value = '';
+            }
+        }
+
+        function renderFieldList() {
+            const fieldList = document.getElementById('fieldList');
+            const sortedPaths = Array.from(fieldPaths).sort();
+            
+            let html = '';
+            for (const path of sortedPaths) {
+                const type = getFieldType(parsedData, path);
+                const level = getNestingLevel(path);
+                const nestClass = level > 0 ? `nested-level-${Math.min(level, 3)}` : '';
+                const displayName = path.split('.').pop(); // Get only the leaf name
+                
+                html += `
+                    <div class="field-item ${nestClass}">
+                        <input type="checkbox" id="field-${path.replace(/\./g, '-')}" data-path="${path}" checked onchange="handleFieldChange(this)">
+                        <label class="field-label" for="field-${path.replace(/\./g, '-')}">
+                            <div class="field-path">${displayName}</div>
+                            <div class="field-type">Type: ${type}</div>
+                        </label>
+                    </div>
+                `;
+            }
+            
+            fieldList.innerHTML = html || '<p style="color: #999;">No fields to display. Parse JSON first.</p>';
+        }
+
+        function handleFieldChange(checkbox) {
+            const path = checkbox.dataset.path;
+            const isChecked = checkbox.checked;
+            
+            // If unchecking a field, uncheck all its children
+            if (!isChecked) {
+                document.querySelectorAll('#fieldList input[type="checkbox"]').forEach(cb => {
+                    const cbPath = cb.dataset.path;
+                    // Check if this checkbox is a child of the unchecked field
+                    if (cbPath.startsWith(path + '.')) {
+                        cb.checked = false;
+                    }
+                });
+            }
+            
+            updateStats();
+        }
+
+        function updateStats() {
+            const total = fieldPaths.size;
+            const selected = document.querySelectorAll('#fieldList input[type="checkbox"]:checked').length;
+            document.getElementById('fieldStats').textContent = `${selected} of ${total} fields selected`;
+            
+            // Auto-update the preview silently
+            applyFilter(true);
+        }
+
+        function selectAll() {
+            document.querySelectorAll('#fieldList input[type="checkbox"]').forEach(cb => cb.checked = true);
+            updateStats();
+        }
+
+        function deselectAll() {
+            document.querySelectorAll('#fieldList input[type="checkbox"]').forEach(cb => cb.checked = false);
+            updateStats();
+        }
+
+        function filterObject(obj, selectedPaths) {
+            if (Array.isArray(obj)) {
+                return obj.map(item => filterObject(item, selectedPaths));
+            }
+            
+            if (obj === null || typeof obj !== 'object') {
+                return obj;
+            }
+            
+            const filtered = {};
+            
+            for (const key in obj) {
+                // Check if this exact key path is selected or if any child path is selected
+                const keyIsSelected = Array.from(selectedPaths).some(path => path === key);
+                const hasSelectedChildren = Array.from(selectedPaths).some(path => path.startsWith(key + '.'));
+                
+                if (keyIsSelected) {
+                    // Include the entire value for this key
+                    filtered[key] = obj[key];
+                } else if (hasSelectedChildren) {
+                    // Recursively filter children
+                    const childPaths = new Set();
+                    selectedPaths.forEach(path => {
+                        if (path.startsWith(key + '.')) {
+                            childPaths.add(path.substring(key.length + 1));
+                        }
+                    });
+                    
+                    if (typeof obj[key] === 'object' && obj[key] !== null) {
+                        filtered[key] = filterObject(obj[key], childPaths);
+                    }
+                }
+            }
+            
+            return filtered;
+        }
+
+        function applyFilter(silent = false) {
+            const outputDiv = document.getElementById('outputMessage');
+            
+            if (!parsedData) {
+                if (!silent) {
+                    outputDiv.innerHTML = '<div class="error-message">Please parse JSON first</div>';
+                }
+                return;
+            }
+            
+            const selectedPaths = new Set();
+            document.querySelectorAll('#fieldList input[type="checkbox"]:checked').forEach(cb => {
+                const path = cb.dataset.path;
+                selectedPaths.add(path);
+            });
+            
+            if (selectedPaths.size === 0) {
+                document.getElementById('outputJson').value = '';
+                if (!silent) {
+                    outputDiv.innerHTML = '<div class="error-message">Please select at least one field</div>';
+                }
+                return;
+            }
+            
+            try {
+                const filtered = filterObject(parsedData, selectedPaths);
+                document.getElementById('outputJson').value = JSON.stringify(filtered, null, 2);
+                if (!silent) {
+                    outputDiv.innerHTML = '<div class="success-message">✓ Filter applied successfully!</div>';
+                } else {
+                    outputDiv.innerHTML = '';
+                }
+            } catch (error) {
+                if (!silent) {
+                    outputDiv.innerHTML = `<div class="error-message">Filter error: ${error.message}</div>`;
+                }
+            }
+        }
+
+        function copyOutput() {
+            const output = document.getElementById('outputJson');
+            const messageDiv = document.getElementById('outputMessage');
+            
+            if (!output.value) {
+                messageDiv.innerHTML = '<div class="error-message">Nothing to copy. Apply filter first.</div>';
+                return;
+            }
+            
+            output.select();
+            document.execCommand('copy');
+            messageDiv.innerHTML = '<div class="success-message">✓ Copied to clipboard!</div>';
+        }
+
+        function clearInput() {
+            document.getElementById('inputJson').value = '';
+            document.getElementById('inputMessage').innerHTML = '';
+            document.getElementById('fieldList').innerHTML = '';
+            document.getElementById('outputJson').value = '';
+            document.getElementById('outputMessage').innerHTML = '';
+            document.getElementById('fieldStats').textContent = '';
+            parsedData = null;
+            fieldPaths = new Set();
+        }
+    </script>
+</body>
+</html>
