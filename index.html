@@ -28,35 +28,19 @@
             border: 1px solid #444;
             overflow: hidden;
             flex: 1;
-            display: grid;
-            grid-template-rows: auto 1fr;
             width: 100%;
-        }
-
-        .header {
-            background: #2d2d2d;
-            border-bottom: 1px solid #444;
-            padding: 20px 30px;
-        }
-
-        .header h1 {
-            font-size: 24px;
-            margin-bottom: 5px;
-            color: #e0e0e0;
-        }
-
-        .header p {
-            color: #aaa;
-            font-size: 14px;
+            display: block;
+            height: 100%;
         }
 
         .content {
             display: grid;
-            grid-template-columns: minmax(200px, 1fr) 350px minmax(200px, 1fr);
+            grid-template-columns: minmax(200px, 1fr) 8px 350px 8px minmax(200px, 1fr);
             gap: 0;
             min-height: 0;
             width: 100%;
             overflow: hidden;
+            height: 100%;
         }
 
         .input-section, .output-section {
@@ -83,6 +67,27 @@
             border-right: 1px solid #444;
             overflow-y: auto;
             min-height: 0;
+        }
+
+        .splitter {
+            background: #242424;
+            cursor: col-resize;
+            position: relative;
+        }
+
+        .splitter::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 3px;
+            width: 2px;
+            background: #3a3a3a;
+        }
+
+        .splitter:hover::after,
+        .splitter.dragging::after {
+            background: #0e639c;
         }
 
         .section-title {
@@ -117,6 +122,7 @@
             font-size: 13px;
             white-space: pre;
             overflow: auto;
+            resize: none;
             background: #1e1e1e;
             color: #d4d4d4;
         }
@@ -197,6 +203,7 @@
             background: #1e1e1e;
             border: 1px solid #444;
             border-radius: 3px;
+            min-width: 0;
         }
 
         .field-item:hover {
@@ -216,17 +223,24 @@
             flex: 1;
             cursor: pointer;
             user-select: none;
+            min-width: 0;
         }
 
         .field-path {
             font-weight: 500;
             color: #d4d4d4;
             margin-bottom: 2px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .field-type {
             font-size: 12px;
             color: #888;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .nested-level-1 { margin-left: 20px; }
@@ -337,16 +351,15 @@
                 border: none;
                 border-bottom: 1px solid #444;
             }
+
+            .splitter {
+                display: none;
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="header">
-            <h1>JSON Log Field Selector</h1>
-            <p>Paste your JSON logs, select the fields you want to keep, and export the filtered result</p>
-        </div>
-
         <div class="content">
             <div class="input-section">
                 <div class="section-title">Input JSON</div>
@@ -371,6 +384,8 @@
                 <div id="inputMessage"></div>
             </div>
 
+            <div class="splitter" data-splitter="left" aria-hidden="true"></div>
+
             <div class="field-selector">
                 <div class="section-title">Select Fields</div>
                 <div class="controls">
@@ -384,6 +399,8 @@
                 <div class="stats" id="fieldStats"></div>
                 <div id="fieldList"></div>
             </div>
+
+            <div class="splitter" data-splitter="right" aria-hidden="true"></div>
 
             <div class="output-section">
                 <div class="section-title">Live Preview</div>
@@ -538,7 +555,6 @@
                         <input type="checkbox" id="field-${path.replace(/\./g, '-')}" data-path="${path}" ${isChecked ? 'checked' : ''} onchange="handleFieldChange(this)">
                         <label class="field-label" for="field-${path.replace(/\./g, '-')}">
                             <div class="field-path">${displayName}</div>
-                            <div class="field-type">Type: ${type}</div>
                         </label>
                     </div>
                 `;
@@ -755,6 +771,7 @@ ${indent}}`;
             output.innerHTML = renderJsonValue(filtered, '', 0);
         }
 
+
         function applyFilter(silent = false) {
             const outputDiv = document.getElementById('outputMessage');
             
@@ -906,6 +923,77 @@ ${indent}}`;
             const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
             handleFileImport(file);
         });
+
+        function setupSplitters() {
+            const content = document.querySelector('.content');
+            const leftSplitter = document.querySelector('.splitter[data-splitter="left"]');
+            const rightSplitter = document.querySelector('.splitter[data-splitter="right"]');
+            const inputSection = document.querySelector('.input-section');
+            const fieldSelector = document.querySelector('.field-selector');
+            const outputSection = document.querySelector('.output-section');
+            if (!content || !leftSplitter || !rightSplitter || !inputSection || !fieldSelector || !outputSection) {
+                return;
+            }
+
+            const minPane = 200;
+            const minCenter = 260;
+            const splitterWidth = 8;
+
+            function startDrag(event, splitter, isLeft) {
+                const startX = event.clientX;
+                const initialLeft = inputSection.getBoundingClientRect().width;
+                const initialCenter = fieldSelector.getBoundingClientRect().width;
+                const initialRight = outputSection.getBoundingClientRect().width;
+
+                splitter.classList.add('dragging');
+                document.body.style.cursor = 'col-resize';
+                document.body.style.userSelect = 'none';
+
+                function onMove(moveEvent) {
+                    const dx = moveEvent.clientX - startX;
+                    let left = initialLeft;
+                    let center = initialCenter;
+                    let right = initialRight;
+
+                    if (isLeft) {
+                        left = Math.max(minPane, initialLeft + dx);
+                        center = Math.max(minCenter, initialCenter - dx);
+                    } else {
+                        center = Math.max(minCenter, initialCenter + dx);
+                        right = Math.max(minPane, initialRight - dx);
+                    }
+
+                    const total = left + center + right + splitterWidth * 2;
+                    const available = content.getBoundingClientRect().width;
+                    if (total > available) {
+                        const overflow = total - available;
+                        if (isLeft) {
+                            left = Math.max(minPane, left - overflow);
+                        } else {
+                            right = Math.max(minPane, right - overflow);
+                        }
+                    }
+
+                    content.style.gridTemplateColumns = `${left}px ${splitterWidth}px ${center}px ${splitterWidth}px ${right}px`;
+                }
+
+                function onUp() {
+                    splitter.classList.remove('dragging');
+                    document.body.style.cursor = '';
+                    document.body.style.userSelect = '';
+                    window.removeEventListener('mousemove', onMove);
+                    window.removeEventListener('mouseup', onUp);
+                }
+
+                window.addEventListener('mousemove', onMove);
+                window.addEventListener('mouseup', onUp);
+            }
+
+            leftSplitter.addEventListener('mousedown', (event) => startDrag(event, leftSplitter, true));
+            rightSplitter.addEventListener('mousedown', (event) => startDrag(event, rightSplitter, false));
+        }
+
+        setupSplitters();
     </script>
 </body>
 </html>
