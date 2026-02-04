@@ -97,6 +97,50 @@
             color: #e0e0e0;
         }
 
+        .input-wrapper {
+            position: relative;
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .blank-state {
+            position: absolute;
+            inset: 0;
+            border: 1px dashed #555;
+            border-radius: 4px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            color: #888;
+            background: rgba(30, 30, 30, 0.85);
+            text-align: center;
+            padding: 16px;
+            cursor: text;
+            z-index: 2;
+        }
+
+        .blank-state.hidden {
+            display: none;
+        }
+
+        .blank-state button {
+            padding: 8px 14px;
+            border: 1px solid #555;
+            border-radius: 4px;
+            font-size: 13px;
+            cursor: pointer;
+            background: #3c3c3c;
+            color: #d4d4d4;
+        }
+
+        .blank-state button:hover {
+            background: #4c4c4c;
+        }
+
         textarea {
             width: 100%;
             flex: 1;
@@ -109,6 +153,8 @@
             resize: none;
             background: #1e1e1e;
             color: #d4d4d4;
+            position: relative;
+            z-index: 1;
         }
 
         .output-json {
@@ -288,6 +334,25 @@
             border-bottom: 1px solid #444;
         }
 
+        .field-search {
+            margin-bottom: 12px;
+        }
+
+        .field-search input {
+            width: 100%;
+            padding: 8px 10px;
+            border: 1px solid #555;
+            border-radius: 4px;
+            font-size: 13px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+        }
+
+        .field-search input:focus {
+            outline: none;
+            border-color: #666;
+        }
+
         .controls button {
             flex: 1;
             padding: 8px 12px;
@@ -363,7 +428,8 @@
         <div class="content">
             <div class="input-section">
                 <div class="section-title">Input JSON</div>
-                <textarea id="inputJson" placeholder='Paste your JSON log here, e.g.:
+                <div class="input-wrapper">
+                    <textarea id="inputJson" placeholder='Paste your JSON log here, e.g.:
 [
   {
     "insertId": "abc123",
@@ -374,6 +440,11 @@
     }
   }
 ]'></textarea>
+                    <div id="inputBlank" class="blank-state">
+                        <div>Start by pasting JSON or generate a sample</div>
+                        <button type="button" onclick="generateSampleJson()">Generate Sample JSON</button>
+                    </div>
+                </div>
                 <div class="button-group">
                     <button class="btn-primary" onclick="parseJson()">Parse JSON</button>
                     <button class="btn-secondary" onclick="triggerFileImport()">Import File</button>
@@ -395,6 +466,9 @@
                 <div class="controls">
                     <button class="btn-secondary" onclick="expandAll()">Expand All</button>
                     <button class="btn-secondary" onclick="collapseAll()">Collapse All</button>
+                </div>
+                <div class="field-search">
+                    <input id="fieldSearch" type="text" placeholder="Search fields..." />
                 </div>
                 <div class="stats" id="fieldStats"></div>
                 <div id="fieldList"></div>
@@ -421,6 +495,7 @@
         let checkedPaths = new Set(); // Track checked state separately
         let excludedPaths = new Set();
         let lastOutputText = '';
+        let fieldSearchQuery = '';
 
         function getAllFieldPaths(obj, prefix = '') {
             const paths = [];
@@ -494,6 +569,7 @@
                 messageDiv.innerHTML = '<div class="success-message">✓ JSON parsed successfully!</div>';
                 renderFieldList();
                 updateStats();
+                updateBlankState();
             } catch (error) {
                 messageDiv.innerHTML = `<div class="error-message">Invalid JSON: ${error.message}</div>`;
                 parsedData = null;
@@ -532,9 +608,13 @@
             const fieldList = document.getElementById('fieldList');
             const sortedPaths = Array.from(fieldPaths).sort();
             const parentChildren = buildParentChildMap(sortedPaths);
+            const query = fieldSearchQuery.trim().toLowerCase();
             
             let html = '';
             for (const path of sortedPaths) {
+                if (query && !path.toLowerCase().includes(query)) {
+                    continue;
+                }
                 // Skip if this field is a child of a collapsed parent
                 if (isChildOfCollapsedParent(path)) {
                     continue;
@@ -562,7 +642,6 @@
             
             fieldList.innerHTML = html || '<p style="color: #666;">No fields to display. Parse JSON first.</p>';
             updateParentStates();
-            syncCheckedPathsFromDom();
         }
 
         function toggleCollapse(path) {
@@ -592,38 +671,30 @@
             renderFieldList();
         }
 
+        function setCheckedForPathAndChildren(path, isChecked) {
+            if (isChecked) {
+                checkedPaths.add(path);
+            } else {
+                checkedPaths.delete(path);
+            }
+
+            for (const candidate of fieldPaths) {
+                if (candidate.startsWith(path + '.')) {
+                    if (isChecked) {
+                        checkedPaths.add(candidate);
+                    } else {
+                        checkedPaths.delete(candidate);
+                    }
+                }
+            }
+        }
+
         function handleFieldChange(checkbox) {
             const path = checkbox.dataset.path;
             const isChecked = checkbox.checked;
-            
-            if (!isChecked) {
-                // If unchecking a field, uncheck all its children
-                document.querySelectorAll('#fieldList input[type="checkbox"]').forEach(cb => {
-                    const cbPath = cb.dataset.path;
-                    if (cbPath.startsWith(path + '.')) {
-                        cb.checked = false;
-                    }
-                });
-            } else {
-                // If checking a field, check all its children
-                document.querySelectorAll('#fieldList input[type="checkbox"]').forEach(cb => {
-                    const cbPath = cb.dataset.path;
-                    if (cbPath.startsWith(path + '.')) {
-                        cb.checked = true;
-                    }
-                });
-            }
-            syncCheckedPathsFromDom();
-            updateParentStates();
-            syncCheckedPathsFromDom();
+            setCheckedForPathAndChildren(path, isChecked);
+            renderFieldList();
             updateStats();
-        }
-
-        function syncCheckedPathsFromDom() {
-            checkedPaths = new Set();
-            document.querySelectorAll('#fieldList input[type="checkbox"]:checked').forEach(cb => {
-                checkedPaths.add(cb.dataset.path);
-            });
         }
 
         function updateParentStates() {
@@ -656,26 +727,26 @@
 
         function updateStats() {
             const total = fieldPaths.size;
-            const selected = document.querySelectorAll('#fieldList input[type="checkbox"]:checked').length;
-            document.getElementById('fieldStats').textContent = `${selected} of ${total} fields selected`;
+            const selected = checkedPaths.size;
+            const visible = document.querySelectorAll('#fieldList .field-item').length;
+            const visibleText = fieldSearchQuery.trim()
+                ? ` • ${visible} shown`
+                : '';
+            document.getElementById('fieldStats').textContent = `${selected} of ${total} fields selected${visibleText}`;
             
             // Auto-update the preview silently
             applyFilter(true);
         }
 
         function selectAll() {
-            document.querySelectorAll('#fieldList input[type="checkbox"]').forEach(cb => cb.checked = true);
-            syncCheckedPathsFromDom();
-            updateParentStates();
-            syncCheckedPathsFromDom();
+            checkedPaths = new Set(fieldPaths);
+            renderFieldList();
             updateStats();
         }
 
         function deselectAll() {
-            document.querySelectorAll('#fieldList input[type="checkbox"]').forEach(cb => cb.checked = false);
-            syncCheckedPathsFromDom();
-            updateParentStates();
-            syncCheckedPathsFromDom();
+            checkedPaths = new Set();
+            renderFieldList();
             updateStats();
         }
 
@@ -782,11 +853,7 @@ ${indent}}`;
                 return;
             }
             
-            const selectedPaths = new Set();
-            document.querySelectorAll('#fieldList input[type="checkbox"]:checked').forEach(cb => {
-                const path = cb.dataset.path;
-                selectedPaths.add(path);
-            });
+            const selectedPaths = new Set(checkedPaths);
             
             if (selectedPaths.size === 0) {
                 renderOutputJson(null);
@@ -884,6 +951,8 @@ ${indent}}`;
             document.getElementById('inputJson').value = '';
             document.getElementById('inputMessage').innerHTML = '';
             document.getElementById('fieldList').innerHTML = '';
+            document.getElementById('fieldSearch').value = '';
+            fieldSearchQuery = '';
             renderOutputJson(null);
             document.getElementById('outputMessage').innerHTML = '';
             document.getElementById('fieldStats').textContent = '';
@@ -892,6 +961,7 @@ ${indent}}`;
             checkedPaths = new Set();
             lastOutputText = '';
             collapsedParents.clear();
+            updateBlankState();
         }
 
         document.getElementById('outputJson').addEventListener('click', (event) => {
@@ -907,6 +977,66 @@ ${indent}}`;
         document.getElementById('fileInput').addEventListener('change', (event) => {
             const file = event.target.files && event.target.files[0];
             handleFileImport(file);
+        });
+
+        function generateSampleJson() {
+            const sample = {
+                requestId: Math.random().toString(36).slice(2, 10),
+                timestamp: new Date().toISOString(),
+                level: ['debug', 'info', 'warn', 'error'][Math.floor(Math.random() * 4)],
+                service: 'json-log-filter',
+                user: {
+                    id: Math.floor(Math.random() * 10000),
+                    name: ['Ava', 'Liam', 'Noah', 'Mia', 'Zoe'][Math.floor(Math.random() * 5)],
+                    plan: ['free', 'pro', 'enterprise'][Math.floor(Math.random() * 3)]
+                },
+                event: {
+                    action: ['login', 'logout', 'update', 'delete'][Math.floor(Math.random() * 4)],
+                    success: Math.random() > 0.2,
+                    latencyMs: Math.floor(Math.random() * 900) + 50
+                },
+                tags: ['api', 'ui', 'auth', 'billing'].sort(() => 0.5 - Math.random()).slice(0, 2),
+                meta: {
+                    ip: `192.168.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`,
+                    region: ['us-east-1', 'us-west-2', 'eu-west-1'][Math.floor(Math.random() * 3)]
+                }
+            };
+
+            document.getElementById('inputJson').value = JSON.stringify(sample, null, 2);
+            parseJson();
+        }
+
+        function updateBlankState() {
+            const input = document.getElementById('inputJson');
+            const blank = document.getElementById('inputBlank');
+            if (!input || !blank) return;
+            if (input.value.trim().length === 0) {
+                blank.classList.remove('hidden');
+            } else {
+                blank.classList.add('hidden');
+            }
+        }
+
+        const inputJson = document.getElementById('inputJson');
+        inputJson.addEventListener('input', updateBlankState);
+        inputJson.addEventListener('focus', () => {
+            const blank = document.getElementById('inputBlank');
+            if (blank) blank.classList.add('hidden');
+        });
+        inputJson.addEventListener('blur', updateBlankState);
+        updateBlankState();
+
+        const inputBlank = document.getElementById('inputBlank');
+        inputBlank.addEventListener('click', (event) => {
+            if (event.target.closest('button')) return;
+            inputJson.focus();
+        });
+
+        const fieldSearchInput = document.getElementById('fieldSearch');
+        fieldSearchInput.addEventListener('input', (event) => {
+            fieldSearchQuery = event.target.value || '';
+            renderFieldList();
+            updateStats();
         });
 
         const dropZone = document.getElementById('dropZone');
