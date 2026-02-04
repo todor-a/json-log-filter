@@ -104,6 +104,40 @@
             resize: none;
         }
 
+        .output-json {
+            width: 100%;
+            flex: 1;
+            min-height: 0;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 13px;
+            white-space: pre;
+            overflow: auto;
+            background: #fff;
+        }
+
+        .output-json.empty::before {
+            content: 'Filtered JSON will appear here...';
+            color: #999;
+        }
+
+        .json-key {
+            cursor: pointer;
+            color: #2c3e50;
+        }
+
+        .json-key:hover {
+            color: #000;
+            text-decoration: underline;
+        }
+
+        .json-string { color: #2d7c2d; }
+        .json-number { color: #1f4b99; }
+        .json-boolean { color: #8e24aa; }
+        .json-null { color: #666; }
+
         textarea:focus {
             outline: none;
             border-color: #999;
@@ -321,7 +355,7 @@
 
             <div class="output-section">
                 <div class="section-title">Live Preview</div>
-                <textarea id="outputJson" placeholder="Filtered JSON will appear here..." readonly></textarea>
+                <div id="outputJson" class="output-json empty" role="region" aria-label="Filtered JSON output"></div>
                 <div class="button-group">
                     <button class="btn-secondary" onclick="copyOutput()">Copy to Clipboard</button>
                 </div>
@@ -336,6 +370,7 @@
         let collapsedParents = new Set();
         let checkedPaths = new Set(); // Track checked state separately
         let excludedPaths = new Set();
+        let lastOutputText = '';
 
         function getAllFieldPaths(obj, prefix = '') {
             const paths = [];
@@ -634,6 +669,59 @@
              return filtered;
          }
 
+        function escapeHtml(value) {
+            return String(value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function renderJsonValue(value, prefix, indentLevel) {
+            const indent = '  '.repeat(indentLevel);
+            const nextIndent = '  '.repeat(indentLevel + 1);
+
+            if (Array.isArray(value)) {
+                if (value.length === 0) return '[]';
+                const items = value.map(item => `${nextIndent}${renderJsonValue(item, prefix, indentLevel + 1)}`);
+                return `[
+${items.join(',\n')}
+${indent}]`;
+            }
+
+            if (value !== null && typeof value === 'object') {
+                const keys = Object.keys(value);
+                if (keys.length === 0) return '{}';
+                const entries = keys.map(key => {
+                    const fullPath = prefix ? `${prefix}.${key}` : key;
+                    const keyHtml = `<span class="json-key" data-path="${fullPath}">"${escapeHtml(key)}"</span>`;
+                    const valueHtml = renderJsonValue(value[key], fullPath, indentLevel + 1);
+                    return `${nextIndent}${keyHtml}: ${valueHtml}`;
+                });
+                return `{
+${entries.join(',\n')}
+${indent}}`;
+            }
+
+            if (value === null) return '<span class="json-null">null</span>';
+            if (typeof value === 'string') return `<span class="json-string">"${escapeHtml(value)}"</span>`;
+            if (typeof value === 'number') return `<span class="json-number">${value}</span>`;
+            if (typeof value === 'boolean') return `<span class="json-boolean">${value}</span>`;
+            return escapeHtml(value);
+        }
+
+        function renderOutputJson(filtered) {
+            const output = document.getElementById('outputJson');
+            if (!filtered) {
+                output.textContent = '';
+                output.classList.add('empty');
+                return;
+            }
+
+            output.classList.remove('empty');
+            output.innerHTML = renderJsonValue(filtered, '', 0);
+        }
+
         function applyFilter(silent = false) {
             const outputDiv = document.getElementById('outputMessage');
             
@@ -651,7 +739,8 @@
             });
             
             if (selectedPaths.size === 0) {
-                document.getElementById('outputJson').value = '';
+                renderOutputJson(null);
+                lastOutputText = '';
                 if (!silent) {
                     outputDiv.innerHTML = '<div class="error-message">Please select at least one field</div>';
                 }
@@ -660,7 +749,8 @@
             
             try {
                 const filtered = filterObject(parsedData, selectedPaths);
-                document.getElementById('outputJson').value = JSON.stringify(filtered, null, 2);
+                lastOutputText = JSON.stringify(filtered, null, 2);
+                renderOutputJson(filtered);
                 if (!silent) {
                     outputDiv.innerHTML = '<div class="success-message">✓ Filter applied successfully!</div>';
                 } else {
@@ -674,31 +764,53 @@
         }
 
         function copyOutput() {
-            const output = document.getElementById('outputJson');
             const messageDiv = document.getElementById('outputMessage');
             
-            if (!output.value) {
+            if (!lastOutputText) {
                 messageDiv.innerHTML = '<div class="error-message">Nothing to copy. Apply filter first.</div>';
                 return;
             }
-            
-            output.select();
-            document.execCommand('copy');
-            messageDiv.innerHTML = '<div class="success-message">✓ Copied to clipboard!</div>';
+
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(lastOutputText).then(() => {
+                    messageDiv.innerHTML = '<div class="success-message">✓ Copied to clipboard!</div>';
+                }).catch(() => {
+                    messageDiv.innerHTML = '<div class="error-message">Copy failed. Try again.</div>';
+                });
+            } else {
+                const temp = document.createElement('textarea');
+                temp.value = lastOutputText;
+                document.body.appendChild(temp);
+                temp.select();
+                document.execCommand('copy');
+                document.body.removeChild(temp);
+                messageDiv.innerHTML = '<div class="success-message">✓ Copied to clipboard!</div>';
+            }
         }
 
         function clearInput() {
             document.getElementById('inputJson').value = '';
             document.getElementById('inputMessage').innerHTML = '';
             document.getElementById('fieldList').innerHTML = '';
-            document.getElementById('outputJson').value = '';
+            renderOutputJson(null);
             document.getElementById('outputMessage').innerHTML = '';
             document.getElementById('fieldStats').textContent = '';
             parsedData = null;
             fieldPaths = new Set();
             checkedPaths = new Set();
+            lastOutputText = '';
             collapsedParents.clear();
         }
+
+        document.getElementById('outputJson').addEventListener('click', (event) => {
+            const keyEl = event.target.closest('.json-key');
+            if (!keyEl) return;
+            const path = keyEl.dataset.path;
+            const checkbox = document.querySelector(`#fieldList input[type="checkbox"][data-path="${path}"]`);
+            if (!checkbox) return;
+            checkbox.checked = !checkbox.checked;
+            handleFieldChange(checkbox);
+        });
     </script>
 </body>
 </html>
