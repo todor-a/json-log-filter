@@ -505,6 +505,8 @@
         let excludedPaths = new Set();
         let lastOutputText = '';
         let fieldSearchQuery = '';
+        const STORAGE_KEY = 'json-log-filter-state-v1';
+        let saveTimer = null;
 
         function getAllFieldPaths(obj, prefix = '') {
             const paths = [];
@@ -579,6 +581,7 @@
                 renderFieldList();
                 updateStats();
                 updateBlankState();
+                scheduleSave();
             } catch (error) {
                 messageDiv.innerHTML = `<div class="error-message">Invalid JSON: ${error.message}</div>`;
                 parsedData = null;
@@ -660,11 +663,13 @@
                 collapsedParents.add(path);
             }
             renderFieldList();
+            scheduleSave();
         }
 
         function expandAll() {
             collapsedParents.clear();
             renderFieldList();
+            scheduleSave();
         }
 
         function collapseAll() {
@@ -678,6 +683,7 @@
                 }
             }
             renderFieldList();
+            scheduleSave();
         }
 
         function setCheckedForPathAndChildren(path, isChecked) {
@@ -704,6 +710,7 @@
             setCheckedForPathAndChildren(path, isChecked);
             renderFieldList();
             updateStats();
+            scheduleSave();
         }
 
         function updateParentStates() {
@@ -751,12 +758,14 @@
             checkedPaths = new Set(fieldPaths);
             renderFieldList();
             updateStats();
+            scheduleSave();
         }
 
         function deselectAll() {
             checkedPaths = new Set();
             renderFieldList();
             updateStats();
+            scheduleSave();
         }
 
          function filterObject(obj, selectedPaths, prefix = '') {
@@ -971,6 +980,7 @@ ${indent}}`;
             lastOutputText = '';
             collapsedParents.clear();
             updateBlankState();
+            scheduleSave();
         }
 
         document.getElementById('outputJson').addEventListener('click', (event) => {
@@ -1035,6 +1045,7 @@ ${indent}}`;
 
         const inputJson = document.getElementById('inputJson');
         inputJson.addEventListener('input', updateBlankState);
+        inputJson.addEventListener('input', scheduleSave);
         inputJson.addEventListener('focus', () => {
             const blank = document.getElementById('inputBlank');
             if (blank) blank.classList.add('hidden');
@@ -1053,6 +1064,7 @@ ${indent}}`;
             fieldSearchQuery = event.target.value || '';
             renderFieldList();
             updateStats();
+            scheduleSave();
         });
 
         const dropZone = document.getElementById('dropZone');
@@ -1129,6 +1141,7 @@ ${indent}}`;
                     document.body.style.userSelect = '';
                     window.removeEventListener('mousemove', onMove);
                     window.removeEventListener('mouseup', onUp);
+                    scheduleSave();
                 }
 
                 window.addEventListener('mousemove', onMove);
@@ -1140,6 +1153,83 @@ ${indent}}`;
         }
 
         setupSplitters();
+
+        function scheduleSave() {
+            if (saveTimer) {
+                clearTimeout(saveTimer);
+            }
+            saveTimer = setTimeout(saveState, 300);
+        }
+
+        function saveState() {
+            try {
+                const content = document.querySelector('.content');
+                const input = document.getElementById('inputJson');
+                const state = {
+                    input: input ? input.value : '',
+                    checked: Array.from(checkedPaths),
+                    collapsed: Array.from(collapsedParents),
+                    search: fieldSearchQuery,
+                    splitter: content && content.style.gridTemplateColumns
+                        ? content.style.gridTemplateColumns
+                        : ''
+                };
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+            } catch (error) {
+                // Ignore storage errors (private mode, quota, etc.)
+            }
+        }
+
+        function loadState() {
+            try {
+                const raw = localStorage.getItem(STORAGE_KEY);
+                if (!raw) return;
+                const state = JSON.parse(raw);
+                if (!state || typeof state !== 'object') return;
+
+                const input = document.getElementById('inputJson');
+                if (input && typeof state.input === 'string') {
+                    input.value = state.input;
+                }
+
+                const content = document.querySelector('.content');
+                if (content && typeof state.splitter === 'string' && state.splitter.trim()) {
+                    content.style.gridTemplateColumns = state.splitter;
+                }
+
+                if (typeof state.search === 'string') {
+                    fieldSearchQuery = state.search;
+                    const searchInput = document.getElementById('fieldSearch');
+                    if (searchInput) searchInput.value = state.search;
+                }
+
+                updateBlankState();
+
+                if (input && input.value.trim().length > 0) {
+                    parseJson();
+
+                    if (Array.isArray(state.checked)) {
+                        const restoredChecked = state.checked.filter(path => fieldPaths.has(path));
+                        checkedPaths = new Set(restoredChecked);
+                    }
+
+                    if (Array.isArray(state.collapsed)) {
+                        collapsedParents = new Set(state.collapsed.filter(path => fieldPaths.has(path)));
+                    }
+
+                    renderFieldList();
+                    updateStats();
+
+                    const inputMessage = document.getElementById('inputMessage');
+                    if (inputMessage) inputMessage.innerHTML = '';
+                }
+            } catch (error) {
+                // Ignore invalid storage data
+            }
+        }
+
+        window.addEventListener('beforeunload', saveState);
+        loadState();
     </script>
 </body>
 </html>
